@@ -7,8 +7,8 @@ import android.content.SharedPreferences;
 import android.location.Address;
 import android.location.Geocoder;
 import android.os.AsyncTask;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.CompoundButton;
@@ -33,7 +33,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.reflect.Array;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -57,6 +56,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     boolean big_route = false;
     int     min_cost = 35;
     double  radius = 0.7;
+    double  dir_radius = 0.0;
 
     ArrayList<Direction> myDirections = new ArrayList<>();
 
@@ -230,11 +230,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         dialog.cancel();
-                        getSharedPreferences("driver_pref", MODE_PRIVATE)
-                                .edit()
-                                .putBoolean("on_time", on_time)
-                                .putBoolean("big_route", big_route)
-                                .apply();
                     }
                 });
         dialog = add.create();
@@ -295,57 +290,91 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         llSelect.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+//                dialog.cancel();
                 dialogSelectDir();
             }
         });
         llAdd.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-//                dialogAddDir();
-                PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
-
-                try {
-                    startActivityForResult(builder.build(MainActivity.this), 1);
-                } catch (GooglePlayServicesRepairableException e) {
-                    e.printStackTrace();
-                } catch (GooglePlayServicesNotAvailableException e) {
-                    e.printStackTrace();
-                }
+//                dialog.cancel();
+                dialogDirRadius();
             }
         });
         llDelete.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+//                dialog.cancel();
                 dialogDeleteDir();
             }
         });
     }
 //-------------------------------------------------------------------------------------
-    void dialogSelectDir() {
-//-------------------------------------------------------------------------------------
-    }
-//-------------------------------------------------------------------------------------
-    void dialogAddDir() {
-//-------------------------------------------------------------------------------------
-        PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
-
-        try {
-            startActivityForResult(builder.build(this), 1);
-        } catch (GooglePlayServicesRepairableException e) {
-            e.printStackTrace();
-        } catch (GooglePlayServicesNotAvailableException e) {
-            e.printStackTrace();
-        }
-    }
-//-------------------------------------------------------------------------------------
     void dialogDeleteDir() {
 //-------------------------------------------------------------------------------------
+        final int SIZE = myDirections.size();
+        final boolean[] deletedItems = new boolean[SIZE];
+        final String[]  addresses    = new String[SIZE];
+        for (int i=0; i<SIZE; i++) {
+            String r = String.format("%.1f", myDirections.get(i).radius);
+            String[] arr = myDirections.get(i).address.split(", ");
+            String addr  = arr[0] + ", " + arr[1] + " [" + r + "км]";
+            addresses[i] = addr;
+            deletedItems[i] = false;
+        }
+
+        final AlertDialog dialog;
+        AlertDialog.Builder add = new AlertDialog.Builder(this);
+        add     .setCancelable(false)
+                .setTitle("Мои направления")
+                .setMultiChoiceItems(addresses, deletedItems,
+                        new DialogInterface.OnMultiChoiceClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which, boolean isChecked) {
+                                deletedItems[which] = isChecked;
+                            }
+                        })
+                .setNeutralButton("Очистить", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int id) {
+                        dialog.cancel();
+                        for (int i = 0; i < SIZE; i++) {
+                            deletedItems[i] = false;;
+                        }
+                        dialogDeleteDir();
+                    }
+                })
+                .setPositiveButton("Удалить", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int id) {
+                        dialog.cancel();
+                        int del = 0;
+                        for (int i = 0; i < SIZE; i++) {
+                            if (deletedItems[i]) {
+                                myDirections.remove(del);
+                                del = i - 1;
+                            }
+                            del++;
+                        }
+                    }
+                });
+
+        dialog = add.create();
+        dialog.show();
     }
 //-------------------------------------------------------------------------------------
-    void dialogDirections() {
+    void dialogSelectDir() {
 //-------------------------------------------------------------------------------------
-        final boolean[] checkedItems = {};
-        final String[] addresses = {};
+        final int SIZE = myDirections.size();
+        final boolean[] checkedItems = new boolean[SIZE];
+        final String[]  addresses    = new String[SIZE];
+        for (int i=0; i<SIZE; i++) {
+            String r = String.format("%.1f", myDirections.get(i).radius);
+            String[] arr = myDirections.get(i).address.split(", ");
+            String addr  = arr[0] + ", " + arr[1] + " [" + r + "км]";
+            addresses[i] = addr;
+            checkedItems[i] = myDirections.get(i).checked;
+        }
 
         final AlertDialog dialog;
         AlertDialog.Builder add = new AlertDialog.Builder(this);
@@ -362,23 +391,19 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         dialog.cancel();
+                        for (int i = 0; i < SIZE; i++) {
+                            myDirections.get(i).setChecked(false);
+                        }
+                        dialogSelectDir();
                     }
                 })
                 .setPositiveButton("Выбрать", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         dialog.cancel();
-                        StringBuilder state = new StringBuilder();
-                        for (int i = 0; i < addresses.length; i++) {
-                            state.append("" + addresses[i]);
-                            if (checkedItems[i])
-                                state.append(" выбран\n");
-                            else
-                                state.append(" не выбран\n");
+                        for (int i = 0; i < SIZE; i++) {
+                            myDirections.get(i).setChecked(checkedItems[i]);
                         }
-                        Toast.makeText(getApplicationContext(),
-                                state.toString(), Toast.LENGTH_LONG)
-                                .show();
                     }
                 });
 
@@ -403,6 +428,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 @Override
                 public void onClick(DialogInterface dialog, int id) {
                     dialog.cancel();
+                    putPreferences();
                     finish();
                 }
             });
@@ -417,7 +443,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         final EditText et = (EditText) view.findViewById(R.id.et);
 
         if (radius == 0) et.setText("");
-        else et.setText(String.valueOf(radius));
+        else et.setText(String.format("%.1f", radius));
 
         final AlertDialog dialog;
         AlertDialog.Builder add = new AlertDialog.Builder(this);
@@ -436,12 +462,54 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         radius = Double.parseDouble(et.getText().toString());
-                        getSharedPreferences("driver_pref", MODE_PRIVATE)
-                                .edit()
-                                .putFloat("radius", (float) radius)
-                                .apply();
                         dialog.cancel();
                         dialogSettings();
+                    }
+                });
+
+        dialog = add.create();
+        dialog.show();
+    }
+//-------------------------------------------------------------------------------------
+    void dialogDirRadius() {
+//-------------------------------------------------------------------------------------
+        final View view = getLayoutInflater().inflate(R.layout.et, null);
+        final EditText et = (EditText) view.findViewById(R.id.et);
+        et.setText("");
+
+        final AlertDialog dialog;
+        AlertDialog.Builder add = new AlertDialog.Builder(this);
+        add.setView(view)
+                .setCancelable(false)
+                .setTitle("Радиус направления")
+                .setNegativeButton("Очистить", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int id) {
+                        dialog.cancel();
+                        dialogDirRadius();
+                    }
+                })
+                .setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int id) {
+                        dialog.cancel();
+                        try {
+                            String s = et.getText().toString().replace(",", ".");
+                            dir_radius = Double.parseDouble(s);
+                        } catch (NumberFormatException e) {
+                            e.printStackTrace();
+      //                      dialogDirAction();
+                            return;
+                        }
+                        PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
+                        try {
+                            startActivityForResult(builder.build(MainActivity.this), 1);
+                        } catch (GooglePlayServicesRepairableException e) {
+                            e.printStackTrace();
+                        } catch (GooglePlayServicesNotAvailableException e) {
+                            e.printStackTrace();
+                        }
+      //                  dialog.cancel();
                     }
                 });
 
@@ -475,10 +543,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         min_cost = Integer.parseInt(et.getText().toString());
-                        getSharedPreferences("driver_pref", MODE_PRIVATE)
-                                .edit()
-                                .putInt("min_cost", min_cost)
-                                .apply();
                         dialog.cancel();
                         dialogSettings();
                     }
@@ -511,10 +575,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         driver_number = et.getText().toString();
-                        getSharedPreferences("driver_pref", MODE_PRIVATE)
-                                .edit()
-                                .putString("driver_number", driver_number)
-                                .apply();
                         dialog.cancel();
                         dialogDriverInfo();
                     }
@@ -547,10 +607,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         driver_color = et.getText().toString();
-                        getSharedPreferences("driver_pref", MODE_PRIVATE)
-                                .edit()
-                                .putString("driver_color", driver_color)
-                                .apply();
                         dialog.cancel();
                         dialogDriverInfo();
                     }
@@ -583,10 +639,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         driver_car = et.getText().toString();
-                        getSharedPreferences("driver_pref", MODE_PRIVATE)
-                                .edit()
-                                .putString("driver_car", driver_car)
-                                .apply();
                         dialog.cancel();
                         dialogDriverInfo();
                     }
@@ -680,11 +732,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         } catch (JSONException e) {
                             e.printStackTrace();
                         }
-                        getSharedPreferences("driver_pref", MODE_PRIVATE)
-                                .edit()
-                                .putLong("driver_id", driver_id)
-                                .putString("driver_phone", driver_phone)
-                                .apply();
                     }
                 });
         dialog = builder.create();
@@ -703,6 +750,24 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         big_route     = sp.getBoolean("big_route", false);
         min_cost      = sp.getInt    ("min_cost", 35);
         radius        = sp.getFloat  ("radius", (float) 0.7);
+        myDirections  = directionsFromString(sp.getString("my_directions", "[]"));
+    }
+//-------------------------------------------------------------------------------------
+    void putPreferences() {
+//-------------------------------------------------------------------------------------
+        getSharedPreferences("driver_pref", MODE_PRIVATE)
+                .edit()
+                .putLong("driver_id", driver_id)
+                .putString("driver_phone", driver_phone)
+                .putString("driver_car", driver_car)
+                .putString("driver_color", driver_color)
+                .putString("driver_number", driver_number)
+                .putBoolean("on_time", on_time)
+                .putBoolean("big_route", big_route)
+                .putInt("min_cost", min_cost)
+                .putFloat("radius", (float) radius)
+                .putString("my_directions", directionsToString())
+                .apply();
     }
 //-------------------------------------------------------------------------------------
     @Override
@@ -724,10 +789,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     String directionsToString() {
 //-------------------------------------------------------------------------------------
         JSONArray  jarr = new JSONArray();
-        JSONObject jdir = new JSONObject();
         try {
             for (Direction direction : myDirections) {
+                JSONObject jdir = new JSONObject();
                 jdir.put("address",  direction.address)
+                    .put("radius",   direction.radius)
                     .put("latitude", direction.latlng.latitude)
                     .put("longitude",direction.latlng.longitude)
                     .put("locality", direction.locality)
@@ -738,6 +804,28 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             e.printStackTrace();
         }
         return jarr.toString();
+    }
+//-------------------------------------------------------------------------------------
+    ArrayList<Direction> directionsFromString(String str) {
+//-------------------------------------------------------------------------------------
+        JSONArray jarr = null;
+        ArrayList<Direction> dirs = new ArrayList<>();
+        try {
+            jarr = new JSONArray(str);
+            for (int i=0; i<jarr.length(); i++) {
+                JSONObject jobj = jarr.getJSONObject(i);
+                String address = jobj.getString("address");
+                double radius  = jobj.getDouble("radius");
+                LatLng latLng  = new LatLng(jobj.getDouble("latitude"),
+                                            jobj.getDouble("longitude"));
+                String locality = jobj.getString("locality");
+                boolean checked = jobj.getBoolean("checked");
+                Direction dir = new Direction(address, radius, latLng, locality, checked);
+                dirs.add(dir);
+            }
+        } catch (JSONException e) { e.printStackTrace(); }
+
+        return dirs;
     }
 //-------------------------------------------------------------------------------------
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -756,8 +844,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         return;
                     }
                     locality = addresses.get(0).getLocality();
-                    myDirections.add(new Direction(address, latLng, locality, false));
-//                    String str = directionsToString();
+                    myDirections.add(new Direction(address, dir_radius, latLng, locality, false));
+                    dialogDirAction();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -814,16 +902,19 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public class Direction {
 //*************************************************************************************
         private String  address;
+        private double  radius;
         private LatLng  latlng;
         private String  locality;
         private boolean checked;
 
-        Direction(String address, LatLng latlng, String locality, boolean checked) {
+        Direction(String address, double radius, LatLng latlng, String locality, boolean checked) {
             this.address  = address;
+            this.radius   = radius;
             this.latlng   = latlng;
             this.locality = locality;
             this.checked  = checked;
         }
+        void setChecked(boolean checked) { this.checked = checked; }
     }
 }
 //**************************************************************************************************
