@@ -47,6 +47,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 //**************************************************************************************************
     String registrationUrl = "http://185.25.119.3/BombilaDriver/registration.php";
 
+    int DIRECTION_CODE = 1;
+    int MY_PLACE_CODE  = 2;
+
     long    driver_id;
     String  driver_phone;
     String  driver_car;
@@ -54,6 +57,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     String  driver_number;
     boolean on_time = false;
     boolean big_route = false;
+    boolean my_place = false;
     int     min_cost = 35;
     double  radius = 0.7;
     double  dir_radius = 0.0;
@@ -61,6 +65,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     ArrayList<Direction> myDirections = new ArrayList<>();
 
     ImageView ivMenu;
+    TextView  tvLocality;
 
 //--------------------------------------------------------------------------------------------------
     @Override
@@ -70,6 +75,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         setContentView(R.layout.activity_main);
 
         ivMenu = findViewById(R.id.ivMenu); ivMenu.setOnClickListener(this);
+        tvLocality = findViewById(R.id.tvLocality);
 
         getPreferences();
         if (driver_id == 0L) dialogRegistration();
@@ -213,8 +219,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         final TextView tvRadius = view.findViewById(R.id.tvRadius);
         final Switch switchOnTime = view.findViewById(R.id.switchOnTime);
         final Switch switchRoute = view.findViewById(R.id.switchRoute);
+        final Switch switchMyPlace = view.findViewById(R.id.switchMyPlace);
         switchOnTime.setChecked(on_time);
         switchRoute.setChecked(big_route);
+        switchMyPlace.setChecked(my_place);
         String s = "Мин. сумма: " + String.valueOf(min_cost) + "грн.";
         tvCost.setText(s);
         String str = String.format("%.1f", radius);
@@ -247,6 +255,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 if (isChecked) big_route = true;
                 else big_route = false;
+            }
+        });
+        switchMyPlace.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                if (isChecked) my_place = true;
+                else my_place = false;
             }
         });
         llCost.setOnClickListener(new View.OnClickListener() {
@@ -503,7 +518,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         }
                         PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
                         try {
-                            startActivityForResult(builder.build(MainActivity.this), 1);
+                            startActivityForResult(builder.build(MainActivity.this), DIRECTION_CODE);
                         } catch (GooglePlayServicesRepairableException e) {
                             e.printStackTrace();
                         } catch (GooglePlayServicesNotAvailableException e) {
@@ -748,6 +763,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         driver_number = sp.getString ("driver_number", "");
         on_time       = sp.getBoolean("on_time", false);
         big_route     = sp.getBoolean("big_route", false);
+        my_place      = sp.getBoolean("my_place", false);
         min_cost      = sp.getInt    ("min_cost", 35);
         radius        = sp.getFloat  ("radius", (float) 0.7);
         myDirections  = directionsFromString(sp.getString("my_directions", "[]"));
@@ -764,6 +780,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 .putString("driver_number", driver_number)
                 .putBoolean("on_time", on_time)
                 .putBoolean("big_route", big_route)
+                .putBoolean("my_place", my_place)
                 .putInt("min_cost", min_cost)
                 .putFloat("radius", (float) radius)
                 .putString("my_directions", directionsToString())
@@ -830,7 +847,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 //-------------------------------------------------------------------------------------
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 //-------------------------------------------------------------------------------------
-        if (requestCode == 1) {
+        if (requestCode == DIRECTION_CODE) {
             if (resultCode == RESULT_OK) {
                 Place pp = PlacePicker.getPlace(this, data);
                 String address = pp.getAddress().toString();
@@ -846,6 +863,26 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     locality = addresses.get(0).getLocality();
                     myDirections.add(new Direction(address, dir_radius, latLng, locality, false));
                     dialogDirAction();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        if (requestCode == MY_PLACE_CODE) {
+            if (resultCode == RESULT_OK) {
+                Place pp = PlacePicker.getPlace(this, data);
+                String address = pp.getAddress().toString();
+                LatLng latLng = new LatLng(pp.getLatLng().latitude, pp.getLatLng().longitude);
+                String locality;
+                try {
+                    List<Address> addresses = new Geocoder(this, Locale.getDefault())
+                            .getFromLocation(latLng.latitude, latLng.longitude,1);
+                    if (addresses.size() == 0 || address.split(", ").length < 2) {
+                        Toast.makeText(this, "Адрес не определен.", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    locality = addresses.get(0).getLocality();
+                    tvLocality.setText(locality);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
