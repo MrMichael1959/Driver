@@ -13,9 +13,11 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.CompoundButton;
@@ -54,6 +56,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 //**************************************************************************************************
     String registrationUrl = "http://185.25.119.3/BombilaDriver/registration.php";
 
+    boolean WORKING = false;
     int DIRECTION_CODE = 1;
     int MY_PLACE_CODE  = 2;
     int REQUEST_ACCESS_FINE_LOCATION = 111;
@@ -79,7 +82,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     TextView  tvLocality;
     TextView  tvAddress;
 
-//    Daemon daemon = new Daemon();
+    Daemon daemon = new Daemon();
+    TextToSpeech mTTS;
+
     private LocationManager locationManager;
 //**************************************************************************************************
     private LocationListener locationListener = new LocationListener() {
@@ -115,7 +120,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         @Override
         public void onStatusChanged(String provider, int status, Bundle extras) {}
     };
-
 //--------------------------------------------------------------------------------------------------
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -133,7 +137,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED);
         if (!hasPermissionLocation) {
             ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    new String[] {Manifest.permission.ACCESS_FINE_LOCATION},
                     REQUEST_ACCESS_FINE_LOCATION);
         }
 
@@ -143,7 +147,24 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             return;
         }
 
+        mTTS = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
+            @Override
+            public void onInit(int status) {
+                if (status == TextToSpeech.SUCCESS) {
+                    int result = mTTS.setLanguage(new Locale("ru"));
+                    if (result == TextToSpeech.LANG_MISSING_DATA
+                            || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        Toast.makeText(MainActivity.this, "Этот язык не поддерживается",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                } else {
+                    Toast.makeText(MainActivity.this, "Ошибка!",
+                            Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
 
+//        daemon.execute();
 
     }
 //--------------------------------------------------------------------------------------------------
@@ -157,7 +178,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED)
             {
                 Toast.makeText(this, "Permission granted.", Toast.LENGTH_SHORT).show();
-                //reload my activity with permission granted or use the features what required the permission
                 finish();
                 startActivity(getIntent());
             } else {
@@ -188,7 +208,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             e.printStackTrace();
         }
     }
-
+//--------------------------------------------------------------------------------------------------
+    @Override
+    protected void onDestroy() {
+//--------------------------------------------------------------------------------------------------
+        if (mTTS != null) {
+            mTTS.stop();
+            mTTS.shutdown();
+            mTTS = null;
+        }
+        daemon.cancel(false);
+        super.onDestroy();
+    }
 //--------------------------------------------------------------------------------------------------
     @Override
     protected void onPause() {
@@ -198,13 +229,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             locationManager.removeUpdates(locationListener);
         } catch(SecurityException e) { e.printStackTrace(); }
     }
-
 //-------------------------------------------------------------------------------------
     @Override
     public void onClick(View v) {
 //-------------------------------------------------------------------------------------
         switch (v.getId()) {
             case R.id.ivMenu:
+//daemon.execute();
                 dialogMenu();
                 break;
             default:
@@ -245,15 +276,16 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
         return address;
     }
-
-    //-------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------
     void dialogMenu() {
 //-------------------------------------------------------------------------------------
         final View view = getLayoutInflater().inflate(R.layout.menu, null);
         final LinearLayout llDriver = view.findViewById(R.id.llDriver);
         final LinearLayout llSettings = view.findViewById(R.id.llSettings);
         final LinearLayout llDirections = view.findViewById(R.id.llDirections);
+        final LinearLayout llToWork  = view.findViewById(R.id.llToWork);
         final LinearLayout llExit = view.findViewById(R.id.llExit);
+        if (WORKING) llToWork.setVisibility(View.GONE);
 
         final AlertDialog dialog;
         AlertDialog.Builder add = new AlertDialog.Builder(this);
@@ -288,6 +320,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             public void onClick(View view) {
                 dialog.cancel();
                 dialogDirAction();
+            }
+        });
+        llToWork.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                dialog.cancel();
+                WORKING = true;
+                daemon.execute();
             }
         });
         llExit.setOnClickListener(new View.OnClickListener() {
@@ -629,7 +669,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 .setPositiveButton("Ok", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
-                        radius = Double.parseDouble(et.getText().toString());
+                        String s = et.getText().toString().replace(",", ".");
+                        radius = Double.parseDouble(s);
                         dialog.cancel();
                         dialogSettings();
                     }
@@ -1105,6 +1146,48 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             this.checked  = checked;
         }
         void setChecked(boolean checked) { this.checked = checked; }
+    }
+//**************************************************************************************************
+    private class  Daemon extends AsyncTask<Void, String, Void> {
+//**************************************************************************************************
+
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+        }
+        @Override
+        protected Void doInBackground(Void... values) {
+
+            while (true) {
+
+                if(isCancelled()) {
+                    break;
+                }
+
+                publishProgress("toast");
+                sleep(5);
+            }
+
+            finish();
+            return null;
+        }
+        @Override
+        protected void onProgressUpdate(String... values) {
+            super.onProgressUpdate(values);
+
+            if(values[0].equals("toast")) {
+//                orderSpeek("Заказ от Бомбилы.");
+                mTTS.speak("Заказ от Бомбилы.", TextToSpeech.QUEUE_FLUSH, null);
+                Toast.makeText(MainActivity.this,"Заказ от Бомбилы.",
+                                Toast.LENGTH_LONG).show();
+            }
+        }
+        @Override
+        protected void onPostExecute(Void result) {
+            super.onPostExecute(result);
+        }
+
     }
 }
 //**************************************************************************************************
