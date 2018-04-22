@@ -20,10 +20,13 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.SimpleAdapter;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -42,12 +45,21 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -61,18 +73,24 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     int MY_PLACE_CODE  = 2;
     int REQUEST_ACCESS_FINE_LOCATION = 111;
 
+    int order_id = 0;
+    boolean clickOrder = false;
+
     long    driver_id;
     String  driver_phone;
     String  driver_car;
     String  driver_color;
     String  driver_number;
+
+    boolean pilot = false;
     boolean on_time = false;
     boolean big_route = false;
-    boolean my_place = false;
+    boolean my_place = false;       Place myPlace;
     int     min_cost = 35;
     double  radius = 0.7;
     double  dir_radius = 0.0;
 
+    String  locality = "";
     double  currlatitude = 0.0;
     double  currlongitude = 0.0;
 
@@ -81,6 +99,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     ImageView ivMenu;
     TextView  tvLocality;
     TextView  tvAddress;
+    TextView  tvOrdersInfo;
+
+    ListView lv;
+    ArrayList<Map<String, String>> dataLv = new ArrayList<>();
+    SimpleAdapter sAdapter = null;
 
     Daemon daemon = new Daemon();
     TextToSpeech mTTS;
@@ -91,9 +114,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 //**************************************************************************************************
         @Override
         public void onLocationChanged(Location location) {
-            if (location == null) return;
+            if (location==null || my_place) return;
+
             currlatitude = location.getLatitude();
             currlongitude = location.getLongitude();
+
             String addr = getAddress();
             if(addr != null) {
                 tvAddress.setText(addr);
@@ -127,9 +152,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        ivMenu = findViewById(R.id.ivMenu); ivMenu.setOnClickListener(this);
-        tvLocality = findViewById(R.id.tvLocality);
-        tvAddress = findViewById(R.id.tvAddress);
+        ivMenu       = findViewById(R.id.ivMenu);       ivMenu.setOnClickListener(this);
+        tvLocality   = findViewById(R.id.tvLocality);
+        tvAddress    = findViewById(R.id.tvAddress);
+        tvOrdersInfo = findViewById(R.id.tvOrdersInfo);
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
 
@@ -141,10 +167,34 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     REQUEST_ACCESS_FINE_LOCATION);
         }
 
+        String[] from = {"address", "distance", "time", "fot", "price", "route"};
+        int[] to = {R.id.tvOrderAddress, R.id.tvOrderDistance, R.id.tvOrderTime,
+                R.id.tvOrderBochka, R.id.tvOrderPrice, R.id.tvOrderRoute};
+        lv = findViewById(R.id.lv);
+        sAdapter = new SimpleAdapter(this, dataLv, R.layout.item, from, to);
+        lv.setAdapter(sAdapter);
+        lv.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                Map<String, String> m = dataLv.get(position);
+                order_id = Integer.parseInt(m.get("order_id"));
+                clickOrder = true;
+            }
+        });
+
         getPreferences();
         if (driver_id == 0L) {
             dialogRegistration();
             return;
+        }
+        if (my_place) {
+            try {
+                PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
+                startActivityForResult(builder.build(MainActivity.this), MY_PLACE_CODE);
+            } catch (GooglePlayServicesRepairableException e) {
+                e.printStackTrace();
+            } catch (GooglePlayServicesNotAvailableException e) {
+                e.printStackTrace();
+            }
         }
 
         mTTS = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
@@ -169,7 +219,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 //--------------------------------------------------------------------------------------------------
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    public void onRequestPermissionsResult
+                    (int requestCode, String[] permissions, int[] grantResults) {
 //--------------------------------------------------------------------------------------------------
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
@@ -193,20 +244,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     protected void onResume() {
 //--------------------------------------------------------------------------------------------------
         super.onResume();
-/*
-        if (cb_my_location) {
-            tvAddress.setText(my_location);
-            return;
-        }
-*/
-        try {
-            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,
-                    1000 * 10, 10, locationListener);
-            locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,
-                    1000 * 10, 10, locationListener);
-        } catch(SecurityException e) {
-            e.printStackTrace();
-        }
+        locationListenerON();
     }
 //--------------------------------------------------------------------------------------------------
     @Override
@@ -225,9 +263,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     protected void onPause() {
 //--------------------------------------------------------------------------------------------------
         super.onPause();
-        try {
-            locationManager.removeUpdates(locationListener);
-        } catch(SecurityException e) { e.printStackTrace(); }
+        locationListenerOFF();
     }
 //-------------------------------------------------------------------------------------
     @Override
@@ -241,6 +277,25 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             default:
                 break;
         }
+    }
+//--------------------------------------------------------------------------------------------------
+    void locationListenerON(){
+//--------------------------------------------------------------------------------------------------
+        try {
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,
+                    1000 * 10, 10, locationListener);
+            locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,
+                    1000 * 10, 10, locationListener);
+        } catch(SecurityException e) {
+            e.printStackTrace();
+        }
+    }
+//--------------------------------------------------------------------------------------------------
+    void locationListenerOFF(){
+//--------------------------------------------------------------------------------------------------
+        try {
+            locationManager.removeUpdates(locationListener);
+        } catch(SecurityException e) { e.printStackTrace(); }
     }
 //--------------------------------------------------------------------------------------------------
     LatLng getLatLng(String addr){
@@ -268,7 +323,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             addresses = coder.getFromLocation(currlatitude, currlongitude, 1);
             if (addresses==null || addresses.size()==0) { return null; }
             address = addresses.get(0).getAddressLine(0);
-            tvLocality.setText(addresses.get(0).getLocality());
+            locality = addresses.get(0).getLocality();
+            tvLocality.setText(locality);
             String[] arr = address.split(", ");
             address = arr[0] + ", " + arr[1];
         } catch (IOException e) {
@@ -453,8 +509,20 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         switchMyPlace.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (isChecked) my_place = true;
-                else my_place = false;
+                if (isChecked) {
+                    PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
+                    try {
+//  locationListenerOFF() in onActivityResult()
+                        startActivityForResult(builder.build(MainActivity.this), MY_PLACE_CODE);
+                    } catch (GooglePlayServicesRepairableException e) {
+                        e.printStackTrace();
+                    } catch (GooglePlayServicesNotAvailableException e) {
+                        e.printStackTrace();
+                    }
+                } else {
+                    locationListenerON();
+                    my_place = false;
+                }
             }
         });
         llCost.setOnClickListener(new View.OnClickListener() {
@@ -1041,6 +1109,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 //-------------------------------------------------------------------------------------
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 //-------------------------------------------------------------------------------------
+        if (resultCode == RESULT_CANCELED) {
+            my_place = false;
+            return;
+        }
         if (requestCode == DIRECTION_CODE) {
             if (resultCode == RESULT_OK) {
                 Place pp = PlacePicker.getPlace(this, data);
@@ -1064,10 +1136,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
         if (requestCode == MY_PLACE_CODE) {
             if (resultCode == RESULT_OK) {
-                Place pp = PlacePicker.getPlace(this, data);
-                String address = pp.getAddress().toString();
-                LatLng latLng = new LatLng(pp.getLatLng().latitude, pp.getLatLng().longitude);
-                String locality;
+                myPlace = PlacePicker.getPlace(this, data);
+                currlatitude = myPlace.getLatLng().latitude;
+                currlongitude = myPlace.getLatLng().longitude;
+                String address = myPlace.getAddress().toString();
+                LatLng latLng = new LatLng(currlatitude, currlongitude);
+//                String locality;
                 try {
                     List<Address> addresses = new Geocoder(this, Locale.getDefault())
                             .getFromLocation(latLng.latitude, latLng.longitude,1);
@@ -1075,8 +1149,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         Toast.makeText(this, "Адрес не определен.", Toast.LENGTH_LONG).show();
                         return;
                     }
+                    String[] arr = address.split(", ");
+                    address = arr[0] + ", " + arr[1];
+                    tvAddress.setText(address);
                     locality = addresses.get(0).getLocality();
                     tvLocality.setText(locality);
+                    my_place = true;
+                    locationListenerOFF();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -1150,7 +1229,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 //**************************************************************************************************
     private class  Daemon extends AsyncTask<Void, String, Void> {
 //**************************************************************************************************
-
+        String     _getDriverUrl        = "http://185.25.119.3/BombilaDriver/get_driver.php";
+        String     _get_free_ordersUrl  = "http://185.25.119.3/BombilaDriver/get_free_orders.php";
+        JSONObject _driver = null;
+        JSONArray  _orders = null;
+        JSONObject _order  = null;
 
         @Override
         protected void onPreExecute() {
@@ -1158,29 +1241,67 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
         @Override
         protected Void doInBackground(Void... values) {
+            String sdriver = toScript(_getDriverUrl, String.valueOf(driver_id));
+            if (sdriver.equals("error")) {
+                publishProgress("error");
+                return null;
+            }
+            try {
+                _driver = new JSONObject(sdriver);
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
 
             while (true) {
-
                 if(isCancelled()) {
                     break;
                 }
+                if (currlatitude == 0.0 || currlongitude == 0.0 || locality == null) {
+                    continue;
+                }
 
-                publishProgress("toast");
-                sleep(5);
+//===> BombilaClient
+                publishProgress("error");
+
+                if (_order == null) {
+                    _getOrders();
+                    _bombila();
+                    publishProgress("show_orders");
+                }
+                else {
+//                    if (__getOrderStatus().equals("delete")) {
+//                        __order = null;
+//                        publishProgress("get_orders");
+//                        continue;
+//                    }
+//                    __orderStatus();
+//                    sleep(__delay);
+                    continue;
+                }
+
+                sleep(2);
             }
 
-            finish();
+//            finish();
             return null;
         }
         @Override
         protected void onProgressUpdate(String... values) {
             super.onProgressUpdate(values);
 
-            if(values[0].equals("toast")) {
-//                orderSpeek("Заказ от Бомбилы.");
+            if(values[0].equals("error")) {
+String s = String.valueOf(currlatitude) + "  " + String.valueOf(currlongitude);
+                Toast.makeText(MainActivity.this, s, Toast.LENGTH_SHORT).show();
+//                Toast.makeText(MainActivity.this,"Ошибка регистрации.",
+//                        Toast.LENGTH_SHORT).show();
+            }
+            if(values[0].equals("show_orders")) {
+                _showOrders();
+            }
+            if(values[0].equals("accept")) {
                 mTTS.speak("Заказ от Бомбилы.", TextToSpeech.QUEUE_FLUSH, null);
                 Toast.makeText(MainActivity.this,"Заказ от Бомбилы.",
-                                Toast.LENGTH_LONG).show();
+                        Toast.LENGTH_LONG).show();
             }
         }
         @Override
@@ -1188,6 +1309,206 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             super.onPostExecute(result);
         }
 
+        String toScript(String... args) {
+            String resultString;
+            String pars = "";
+            for (int i=1; i<args.length; i++) {
+                if (i == args.length-1) {
+                    pars += "par" + String.valueOf(i) + "=" + args[i];
+                } else {
+                    pars += "par" + String.valueOf(i) + "=" + args[i] + "&";
+                }
+            }
+            try {
+                URL url = new URL(args[0]);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setDoOutput(true);
+                OutputStream os = conn.getOutputStream();
+                byte[] data = pars.getBytes("UTF-8");
+                os.write(data); os.flush(); os.close();
+
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                InputStream is = conn.getInputStream();
+                byte[] buffer = new byte[1024];
+                int bytesRead;
+                while ((bytesRead = is.read(buffer)) != -1) { baos.write(buffer, 0, bytesRead); }
+                data = baos.toByteArray();
+                baos.flush(); baos.close(); is.close();
+                resultString = new String(data, "UTF-8");
+                conn.disconnect();
+            } catch (MalformedURLException e) { resultString = "MalformedURLException:" + e.getMessage();
+            } catch (IOException e) { resultString = "IOException:" + e.getMessage();
+            } catch (Exception e) { resultString = "Exception:" + e.getMessage();
+            }
+            return resultString;
+        }
+
+        void _showOrders() {
+            dataLv.clear();
+            int length = _orders.length();
+            tvOrdersInfo.setText("Заказов: " +  String.valueOf(length));
+
+            Map<String, String> m;
+
+            try {
+                for (int i = 0; i < length; i++) {
+                    JSONObject obj = _orders.getJSONObject(i);
+
+                    String order_id = obj.getString("id");
+
+                    JSONObject data = obj.getJSONObject("data");
+                    String local = data.getJSONArray("localities").getString(0);
+                    JSONArray addresses = data.getJSONArray("addresses");
+                    String[] arr = addresses.getString(0).split(", ");
+                    String address = arr[0] + ", " + arr[1];
+                    if (!locality.equals(local)) address += " (" + local + ")";
+                    String route = "";
+                    for (int k=1; k<addresses.length(); k++) {
+                        local = data.getJSONArray("localities").getString(k);
+                        arr = addresses.getString(k).split(", ");
+                        String dir = arr[0] + ", " + arr[1];
+                        if (!locality.equals(local)) dir += " (" + local + ")";
+                        route += "=>" + dir + " ";
+                    }
+                    String time = data.getString("on_time");
+                    if (!time.equals("")) {
+                        time = "[" + time + "]";
+                    }
+                    String price = data.getString("cost_total") + "грн.";
+
+                    double latitude  = data.getJSONArray("coordes")
+                                           .getJSONArray(0)
+                                           .getDouble(0);
+                    double longitude = data.getJSONArray("coordes")
+                                           .getJSONArray(0)
+                                           .getDouble(1);
+                    double d = new BigDecimal(_getDistance(currlatitude, currlongitude, latitude, longitude)).
+                            setScale(2, RoundingMode.UP).doubleValue();
+                    String dist = String.valueOf(d);
+
+                    String distance = "(" + dist + ")";
+                    if (d < 10.00) dist = "0" + dist;
+
+                    String fot = "";
+                    if (!locality.equals(local)) fot = "[Межгород]";
+
+                    m = new HashMap<>();
+                    m.put("order_id", order_id);
+                    m.put("address", address);
+                    m.put("dist", dist);
+                    m.put("distance", distance);
+                    m.put("time", time);
+                    m.put("fot", fot);
+                    m.put("price", price);
+                    m.put("route", route);
+//                    m.put("route", route.replace('&', ' '));
+                    dataLv.add(m);
+                }
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+
+            Collections.sort(dataLv, new Comparator<Map<String, String>>() {
+                @Override
+                public int compare(Map<String, String> m1, Map<String, String> m2) {
+                    String d1 = m1.get("dist");
+                    String d2 = m2.get("dist");
+                    return d1.compareTo(d2);
+                }
+            });
+            sAdapter.notifyDataSetChanged();
+        }
+
+        void _bombila() {
+    //        if (!pilot) return;
+            try {
+                for (int i=0; i<_orders.length(); i++) {
+                    JSONObject order = _orders.getJSONObject(i);
+                    JSONObject data = order.getJSONObject("data");
+                    JSONArray ltlns = data.getJSONArray("coordes");
+
+                    if (data.getInt("cost_total") < min_cost) continue;
+                    if (!on_time && !data.getString("on_time").equals("")) continue;
+                    if (!big_route && ltlns.length()>2) continue;
+                    double _latitude = ltlns.getJSONArray(0).getDouble(0);
+                    double _longitude = ltlns.getJSONArray(0).getDouble(1);
+                    double  d = _getDistance(currlatitude, currlongitude, _latitude, _longitude);
+    //                if (d > radius) continue;
+
+                    double _end_latitude = ltlns.getJSONArray(ltlns.length()-1).getDouble(0);
+                    double _end_longitude = ltlns.getJSONArray(ltlns.length()-1).getDouble(1);
+                    for (Direction direction : myDirections) {
+    //                    if (!direction.checked) continue;
+                        double dir_latitude = direction.latlng.latitude;
+                        double dir_longitude = direction.latlng.longitude;
+                        d = _getDistance(_end_latitude, _end_longitude, dir_latitude, dir_longitude);
+                        if (d > direction.radius) continue;
+                        break;
+                    }
+                    boolean b = _accept(order.getInt("id"));
+                    if (b) break;
+                }
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+        }
+
+        public boolean _accept(long order_id) {
+ /*
+            String driver = login + " " + password;
+            String id = String.valueOf(order_id);
+            driver_info = getSharedPreferences("bombila_pref", MODE_PRIVATE)
+                    .getString("driver_info", "");
+            String res = toScript("http://185.25.119.3/BombilaClient/accept_order.php",
+                    driver, id, driver_info);
+
+            if (res.equals("error")) return false;
+
+            try {
+                __order = new JSONObject(res);
+                __status = __order.getString("status");
+                __accept_time = Calendar.getInstance().getTimeInMillis();
+                JSONObject data = new JSONObject(__order.getString("data"));
+                data.put("accept_time", __accept_time);
+                __order.remove("data");
+                __order.put("data", data);
+                boolean b = __updateOrder(data.toString(), __status);
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+*/
+            return true;
+        }
+
+        void _getOrders() {
+//            if (!pilot || !__checkDriverInfo()) return;
+
+            String result = toScript(_get_free_ordersUrl);
+            try {
+                JSONObject jresult = new JSONObject(result);
+                JSONArray arr_id    = jresult.getJSONArray("id");
+                JSONArray arr_phone = jresult.getJSONArray("phone");
+                JSONArray arr_data  = jresult.getJSONArray("data");
+                JSONArray arr_status = jresult.getJSONArray("status");
+                JSONArray orders = new JSONArray();
+                for (int i=0; i<arr_id.length(); i++) {
+                    JSONObject jobj  = new JSONObject();
+                    jobj.put("id", arr_id.getLong(i));
+                    jobj.put("phone", arr_phone.getString(i));
+                    jobj.put("data", new JSONObject(arr_data.getString(i)));
+                    jobj.put("status", arr_status.getString(i));
+
+                    orders.put(jobj);
+                }
+                _orders = orders;
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+        }
+
+        double _getDistance(double s1, double d1, double s2, double d2) {
+            return 111.2*Math.sqrt(Math.pow(s1-s2,2)+Math.pow((d1-d2)*Math.cos(Math.PI*s1/180),2));
+        }
     }
 }
 //**************************************************************************************************
