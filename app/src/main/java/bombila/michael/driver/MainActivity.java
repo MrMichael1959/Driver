@@ -11,6 +11,8 @@ import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
@@ -21,6 +23,7 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.AdapterView;
+import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.ImageView;
@@ -90,6 +93,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     double  radius = 0.7;
     double  dir_radius = 0.0;
 
+    String callNumber = "";
+
     String  locality = "";
     double  currlatitude = 0.0;
     double  currlongitude = 0.0;
@@ -97,9 +102,21 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     ArrayList<Direction> myDirections = new ArrayList<>();
 
     ImageView ivMenu;
+    ImageView ivPilot;
     TextView  tvLocality;
     TextView  tvAddress;
     TextView  tvOrdersInfo;
+    TextView  tvAssign;
+    LinearLayout llOnLine;
+    LinearLayout llOnPlace;
+    Button btnCall;
+    Button btnCancel;
+    Button btnOnPlace;
+    Button btnOnRoad;
+
+    boolean clickBtnCancel = false;
+    boolean clickBtnOnPlace = false;
+    boolean clickBtnOnRoad = false;
 
     ListView lv;
     ArrayList<Map<String, String>> dataLv = new ArrayList<>();
@@ -107,6 +124,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     Daemon daemon = new Daemon();
     TextToSpeech mTTS;
+    MediaPlayer mp = null;
 
     private LocationManager locationManager;
 //**************************************************************************************************
@@ -152,10 +170,20 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        mp = MediaPlayer.create(this, R.raw.order_accepted);
+
         ivMenu       = findViewById(R.id.ivMenu);       ivMenu.setOnClickListener(this);
+        ivPilot      = findViewById(R.id.ivPilot);      ivPilot.setOnClickListener(this);
         tvLocality   = findViewById(R.id.tvLocality);
         tvAddress    = findViewById(R.id.tvAddress);
         tvOrdersInfo = findViewById(R.id.tvOrdersInfo);
+        tvAssign     = findViewById(R.id.tvAssign);
+        llOnLine     = findViewById(R.id.llOnLine);
+        llOnPlace    = findViewById(R.id.llOnPlace);
+        btnCall      = findViewById(R.id.btnCall);      btnCall.setOnClickListener(this);
+        btnCancel    = findViewById(R.id.btnCancel);    btnCancel.setOnClickListener(this);
+        btnOnPlace   = findViewById(R.id.btnOnPlace);   btnOnPlace.setOnClickListener(this);
+        btnOnRoad    = findViewById(R.id.btnOnRoad);    btnOnRoad.setOnClickListener(this);
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
 
@@ -270,9 +298,43 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public void onClick(View v) {
 //-------------------------------------------------------------------------------------
         switch (v.getId()) {
+            case R.id.ivPilot:
+                if (pilot) {
+                    pilot = false;
+                    ivPilot.setImageResource(R.drawable.ic_pilot_red);
+                } else {
+                    pilot = true;
+                    ivPilot.setImageResource(R.drawable.ic_pilot_green);
+                }
+                break;
             case R.id.ivMenu:
-//daemon.execute();
                 dialogMenu();
+                break;
+            case R.id.btnCall:
+                if (callNumber != null) {
+                    String number = String.format("tel:%s", callNumber);
+                    if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+                        return;
+                    }
+                    startActivity(new Intent(Intent.ACTION_CALL, Uri.parse(number)));
+                }
+                break;
+            case R.id.btnCancel:
+                llOnLine.setVisibility(View.VISIBLE);
+                llOnPlace.setVisibility(View.GONE);
+                ivMenu.setVisibility(View.VISIBLE);
+                ivPilot.setVisibility(View.VISIBLE);
+                clickBtnCancel = true;
+                break;
+            case R.id.btnOnPlace:
+                clickBtnOnPlace = true;
+                break;
+            case R.id.btnOnRoad:
+                llOnLine.setVisibility(View.VISIBLE);
+                llOnPlace.setVisibility(View.GONE);
+                ivMenu.setVisibility(View.VISIBLE);
+                ivPilot.setVisibility(View.VISIBLE);
+                clickBtnOnRoad = true;
                 break;
             default:
                 break;
@@ -1231,9 +1293,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 //**************************************************************************************************
         String     _getDriverUrl        = "http://185.25.119.3/BombilaDriver/get_driver.php";
         String     _get_free_ordersUrl  = "http://185.25.119.3/BombilaDriver/get_free_orders.php";
+        String     _accept_orderUrl     = "http://185.25.119.3/BombilaDriver/accept_order.php";
+        String     _update_orderUrl     = "http://185.25.119.3/BombilaDriver/update_order.php";
+        String     _get_order_by_idUrl  = "http://185.25.119.3/BombilaClient/get_order_by_id.php";
         JSONObject _driver = null;
         JSONArray  _orders = null;
         JSONObject _order  = null;
+        String _status      = "";
+        long   _accept_time = 0L;
+        long   _place_time  = 0L;
 
         @Override
         protected void onPreExecute() {
@@ -1269,13 +1337,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     publishProgress("show_orders");
                 }
                 else {
-//                    if (__getOrderStatus().equals("delete")) {
-//                        __order = null;
-//                        publishProgress("get_orders");
-//                        continue;
-//                    }
-//                    __orderStatus();
-//                    sleep(__delay);
+                    if (_getOrderStatus().equals("delete")) {
+                        _order = null;
+                        publishProgress("get_orders");
+                        continue;
+                    }
+                    _orderStatus();
+                    sleep(5);
                     continue;
                 }
 
@@ -1298,10 +1366,23 @@ String s = String.valueOf(currlatitude) + "  " + String.valueOf(currlongitude);
             if(values[0].equals("show_orders")) {
                 _showOrders();
             }
-            if(values[0].equals("accept")) {
-                mTTS.speak("Заказ от Бомбилы.", TextToSpeech.QUEUE_FLUSH, null);
-                Toast.makeText(MainActivity.this,"Заказ от Бомбилы.",
-                        Toast.LENGTH_LONG).show();
+            if(values[0].equals("_first_accept")) {
+                mp.start();
+                ivPilot.setImageResource(R.drawable.ic_pilot_red);
+                ivPilot.setVisibility(View.GONE);
+                ivMenu.setVisibility(View.GONE);
+                llOnLine.setVisibility(View.GONE);
+                llOnPlace.setVisibility(View.VISIBLE);
+                _showOrderInfo();
+            }
+            if(values[0].equals("_accept")) {
+                _showOrderInfo();
+            }
+            if (values[0].equals("get_orders")) {
+                ivPilot.setVisibility(View.VISIBLE);
+                ivMenu.setVisibility(View.VISIBLE);
+                llOnLine.setVisibility(View.VISIBLE);
+                llOnPlace.setVisibility(View.GONE);
             }
         }
         @Override
@@ -1345,13 +1426,17 @@ String s = String.valueOf(currlatitude) + "  " + String.valueOf(currlongitude);
 
         void _showOrders() {
             dataLv.clear();
+            if (_orders == null) {
+                tvOrdersInfo.setText("Заказов: 0");
+                return;
+            }
             int length = _orders.length();
             tvOrdersInfo.setText("Заказов: " +  String.valueOf(length));
 
             Map<String, String> m;
-
             try {
                 for (int i = 0; i < length; i++) {
+                    String fot = "";
                     JSONObject obj = _orders.getJSONObject(i);
 
                     String order_id = obj.getString("id");
@@ -1361,13 +1446,19 @@ String s = String.valueOf(currlatitude) + "  " + String.valueOf(currlongitude);
                     JSONArray addresses = data.getJSONArray("addresses");
                     String[] arr = addresses.getString(0).split(", ");
                     String address = arr[0] + ", " + arr[1];
-                    if (!locality.equals(local)) address += " (" + local + ")";
+                    if (!locality.equals(local)) {
+                        address += " (" + local + ")";
+                        fot = "[Межгород]";
+                    }
                     String route = "";
                     for (int k=1; k<addresses.length(); k++) {
                         local = data.getJSONArray("localities").getString(k);
                         arr = addresses.getString(k).split(", ");
                         String dir = arr[0] + ", " + arr[1];
-                        if (!locality.equals(local)) dir += " (" + local + ")";
+                        if (!locality.equals(local)) {
+                            dir += " (" + local + ")";
+                            fot = "[Межгород]";
+                        }
                         route += "=>" + dir + " ";
                     }
                     String time = data.getString("on_time");
@@ -1389,8 +1480,8 @@ String s = String.valueOf(currlatitude) + "  " + String.valueOf(currlongitude);
                     String distance = "(" + dist + ")";
                     if (d < 10.00) dist = "0" + dist;
 
-                    String fot = "";
-                    if (!locality.equals(local)) fot = "[Межгород]";
+//                    String fot = "";
+//                    if (!locality.equals(local)) fot = "[Межгород]";
 
                     m = new HashMap<>();
                     m.put("order_id", order_id);
@@ -1420,7 +1511,7 @@ String s = String.valueOf(currlatitude) + "  " + String.valueOf(currlongitude);
         }
 
         void _bombila() {
-    //        if (!pilot) return;
+            if (!pilot) return;
             try {
                 for (int i=0; i<_orders.length(); i++) {
                     JSONObject order = _orders.getJSONObject(i);
@@ -1433,12 +1524,12 @@ String s = String.valueOf(currlatitude) + "  " + String.valueOf(currlongitude);
                     double _latitude = ltlns.getJSONArray(0).getDouble(0);
                     double _longitude = ltlns.getJSONArray(0).getDouble(1);
                     double  d = _getDistance(currlatitude, currlongitude, _latitude, _longitude);
-    //                if (d > radius) continue;
+                    if (d > radius) continue;
 
                     double _end_latitude = ltlns.getJSONArray(ltlns.length()-1).getDouble(0);
                     double _end_longitude = ltlns.getJSONArray(ltlns.length()-1).getDouble(1);
                     for (Direction direction : myDirections) {
-    //                    if (!direction.checked) continue;
+                        if (!direction.checked) continue;
                         double dir_latitude = direction.latlng.latitude;
                         double dir_longitude = direction.latlng.longitude;
                         d = _getDistance(_end_latitude, _end_longitude, dir_latitude, dir_longitude);
@@ -1453,36 +1544,42 @@ String s = String.valueOf(currlatitude) + "  " + String.valueOf(currlongitude);
             }
         }
 
-        public boolean _accept(long order_id) {
- /*
-            String driver = login + " " + password;
+        boolean _accept(long order_id) {
             String id = String.valueOf(order_id);
-            driver_info = getSharedPreferences("bombila_pref", MODE_PRIVATE)
-                    .getString("driver_info", "");
-            String res = toScript("http://185.25.119.3/BombilaClient/accept_order.php",
-                    driver, id, driver_info);
-
+            String driver_info =
+                    driver_car    + "!" +
+                    driver_color  + "!" +
+                    driver_number + "!" +
+                    driver_phone;
+            String res = toScript(_accept_orderUrl,String.valueOf(driver_id),id,driver_info);
             if (res.equals("error")) return false;
 
             try {
-                __order = new JSONObject(res);
-                __status = __order.getString("status");
-                __accept_time = Calendar.getInstance().getTimeInMillis();
-                JSONObject data = new JSONObject(__order.getString("data"));
-                data.put("accept_time", __accept_time);
-                __order.remove("data");
-                __order.put("data", data);
-                boolean b = __updateOrder(data.toString(), __status);
+                _order = new JSONObject(res);
+                _status = _order.getString("status");
+                _accept_time = Calendar.getInstance().getTimeInMillis();
+                JSONObject data = new JSONObject(_order.getString("data"));
+                data.put("accept_time", _accept_time);
+                _order.remove("data");
+                _order.put("data", data);
+                boolean b = _updateOrder(data.toString(), _status);
             } catch (JSONException e) {
                 e.printStackTrace();
             }
-*/
             return true;
         }
 
-        void _getOrders() {
-//            if (!pilot || !__checkDriverInfo()) return;
+        boolean _updateOrder(String data, String status) {
+            String res = "";
+            try {
+                res = toScript(_update_orderUrl, _order.getString("id"), data, status);
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+            return !res.equals("error");
+        }
 
+        void _getOrders() {
             String result = toScript(_get_free_ordersUrl);
             try {
                 JSONObject jresult = new JSONObject(result);
@@ -1501,6 +1598,125 @@ String s = String.valueOf(currlatitude) + "  " + String.valueOf(currlongitude);
                     orders.put(jobj);
                 }
                 _orders = orders;
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+        }
+
+        String _getOrderStatus() {
+            String status = "";
+            try {
+                String res = toScript(_get_order_by_idUrl, _order.getString("id"));
+                status = new JSONObject(res).getString("status");
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+            return status;
+        }
+
+        void _orderStatus() {
+            if (pilot) {
+                pilot = false;
+                publishProgress("_first_accept");
+                //                        String sBal = setBalance(String.valueOf(balance), String.valueOf(pay),
+                //                                String.valueOf(order_id), action_response.replace('&', ' '));
+                //                        balance = Double.parseDouble(sBal);
+                //                        publishProgress("balance");
+            }
+            publishProgress("_accept");
+        }
+
+        public void  _showOrderInfo() {
+            try {
+                String info = "";
+                String begin_locality   = "";
+                String current_locality = "";
+
+                String sdata = _order.getString("data");
+                JSONObject jdata = new JSONObject(sdata);
+                if (jdata.has("accept_time")) _accept_time = jdata.getLong("accept_time");
+                if (jdata.has("place_time")) _place_time = jdata.getLong("place_time");
+
+    // info = "ПРЕДВАРИТЕЛЬНЫЙ ЗАКАЗ ";
+                String on_time = jdata.getString("on_time");
+                if (!on_time.equals("")) {
+                    info = "ПРЕДВАРИТЕЛЬНЫЙ ЗАКАЗ " + "[" + on_time + "]\n\n";
+                }
+    // Заказ принят
+                SimpleDateFormat spf = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+                info += "Заказ принят: " + spf.format(new Date(_accept_time)) + "\n";
+    // На месте
+                if (_place_time != 0L) {
+                    info += "На месте: " + spf.format(new Date(_place_time)) + "\n";
+                }
+    // Откуда
+                String address = jdata.getJSONArray("addresses") .getString(0);
+                begin_locality = jdata.getJSONArray("localities").getString(0);
+                String[] arr = address.split(", ");
+                address = arr[0] + ", " + arr[1];
+                info += "Откуда: " + address + "\n";
+    // Куда
+                String route = "";
+                for (int j = 1; j < jdata.getJSONArray("addresses").length(); j++) {
+                    address = jdata.getJSONArray("addresses").getString(j);
+                    current_locality = jdata.getJSONArray("localities").getString(j);
+                    arr = address.split(", ");
+                    if (begin_locality.equals(current_locality)) {
+                        address = arr[0] + ", " + arr[1];
+                    } else {
+                        address = arr[0] + ", " + arr[1] + " (" + current_locality + ")";
+                    }
+                    route += "\n=>" + address + " ";
+                }
+                info +=  "Куда: " + route + "\n";
+    // Стоимость
+                String price = String.valueOf(jdata.getDouble("cost_total"));
+                info += "Стоимость: " + price + "\n";
+    // Примечание
+                if (!jdata.getString("PS").equals("")) {
+                    info += "Примечание: " + jdata.getString("PS") + "\n";
+                }
+    // Телефон
+                callNumber = _order.getString("phone");
+                if (!callNumber.equals("null")) {
+                    info += "Телефон: " + callNumber + "\n";
+                }
+    // Дозвон
+    /*
+                String fdial_t = obj.getString("FDIAL_T");
+                if (!fdial_t.equals("null")) {
+                    long ltime = (Long.parseLong(fdial_t) - deltaTime) * 1000;
+                    SimpleDateFormat spf = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+                    info += "Дозвон: " + spf.format(new Date(ltime)) + "\n";
+                }
+    */
+                long curr_time  = Calendar.getInstance().getTimeInMillis();
+                long delta_time = curr_time - _accept_time;
+
+                if (delta_time < 120000) {
+                    btnCancel.setVisibility(View.VISIBLE);
+                } else {
+                    btnCancel.setVisibility(View.GONE);
+                }
+    // Осталось
+                if (_place_time == 0L) {
+                    btnOnPlace.setVisibility(View.VISIBLE);
+                    btnOnRoad.setVisibility(View.GONE);
+
+                    long d = _accept_time/1000 + 600 - curr_time/1000;
+                    String min = String.valueOf(d / 60);
+                    String sec = String.valueOf(d % 60);
+                    if (sec.length() == 1) sec += "0";
+                    info += "\nОсталось: " + min + ":" + sec;
+    //                if (d < 60) {
+    //                    __clickBtnOnPlace = true;
+    //                }
+                } else {
+                    btnOnPlace.setVisibility(View.GONE);
+                    btnOnRoad.setVisibility(View.VISIBLE);
+                }
+                tvAssign.setText(info);
+
             } catch (JSONException e) {
                 e.printStackTrace();
             }
