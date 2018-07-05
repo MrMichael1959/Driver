@@ -12,8 +12,7 @@
         android:layout_marginLeft="4dp"
         android:layout_marginRight="4dp"
         android:layout_marginTop="16dp"
-        android:hint="Логин"
-        android:inputType="phone" />
+        android:hint="Логин" />
 
     <EditText
         android:id="@+id/etPassword"
@@ -23,18 +22,6 @@
         android:layout_marginLeft="4dp"
         android:layout_marginRight="4dp"
         android:layout_marginTop="16dp"
-        android:hint="Пароль"
-        android:inputType="phone" />
-
-    <EditText
-        android:id="@+id/etPhone"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_marginBottom="4dp"
-        android:layout_marginLeft="4dp"
-        android:layout_marginRight="4dp"
-        android:layout_marginTop="16dp"
-        android:hint="Телефон"
-        android:inputType="phone" />
+        android:hint="Пароль" />
 
 </LinearLayout>

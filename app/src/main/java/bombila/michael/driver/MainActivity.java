@@ -68,20 +68,18 @@ import java.util.concurrent.TimeUnit;
 
 //**************************************************************************************************
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
-    //**************************************************************************************************
-    String registrationUrl = "http://185.25.119.3/BombilaDriver/registration.php";
-    String recoveryUrl     = "http://185.25.119.3/BombilaDriver/recovery.php";
+//**************************************************************************************************
+    String checkDriverUrl  = "http://185.25.119.3/BombilaDriver/check_driver.php";
 
     boolean WORKING = false;
     int DIRECTION_CODE = 1;
     int MY_PLACE_CODE = 2;
-    int REQUEST_ACCESS_FINE_LOCATION = 111;
-    int REQUEST_CALL_PHONE = 112;
 
     int order_id = 0;
     boolean clickOrder = false;
 
-    long driver_id;
+    String driver_login;
+    String driver_password;
     String driver_phone;
     String driver_car;
     String driver_color;
@@ -227,10 +225,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         });
 
         getPreferences();
-        if (driver_id == 0L) {
-            dialogRegistration();
-            return;
-        }
+
+        dialogLogin();
+
         if (my_place) {
             try {
                 PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
@@ -858,7 +855,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         } catch (GooglePlayServicesNotAvailableException e) {
                             e.printStackTrace();
                         }
-      //                  dialog.cancel();
                     }
                 });
 
@@ -884,7 +880,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     public void onClick(DialogInterface dialog, int id) {
                         dialog.cancel();
                         min_cost = 0;
-//                        et.setText("");
                         dialogMinCost();
                     }
                 })
@@ -1043,45 +1038,38 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         dialog.show();
     }
 //-------------------------------------------------------------------------------------
-    void dialogRegistration() {
+    void dialogLogin() {
 //-------------------------------------------------------------------------------------
-        final View view = getLayoutInflater().inflate(R.layout.registration, null);
-        final EditText etPhone = (EditText) view.findViewById(R.id.etPhone);
+        final View view = getLayoutInflater().inflate(R.layout.login, null);
+        final EditText etLogin    = view.findViewById(R.id.etLogin);
+        final EditText etPassword = view.findViewById(R.id.etPassword);
+
+        etLogin.setText(driver_login);
+        etPassword.setText(driver_password);
 
         final AlertDialog dialog;
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setView(view)
                 .setCancelable(false)
-                .setTitle("Регистрация")
+                .setTitle("Авторизация")
                 .setPositiveButton("Ok", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         dialog.cancel();
-                        driver_phone = etPhone.getText().toString()
-                                .replace("+","")
-                                .replace("-","")
-                                .replace("(","")
-                                .replace(")","")
-                                .replace(" ","");
-                        driver_phone = "+" + driver_phone;
 
-                        if (driver_phone.length() < 12) {
-                            dialogRegistration();
-                            return;
-                        }
+                        driver_login    = etLogin.getText().toString();
+                        driver_password = etPassword.getText().toString();
 
                         try {
-                            String s = new HttpPost().execute(recoveryUrl, driver_phone).get();
+                            String s = new HttpPost()
+                                    .execute(checkDriverUrl, driver_login, driver_password)
+                                    .get();
                             if (s.equals("error")) {
-                                s = new HttpPost().execute(registrationUrl, driver_phone).get();
+                                dialogRegistration();
                             }
-                            driver_id = new JSONObject(s).getLong("id");
-                            dialogDriverInfo();
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         } catch (ExecutionException e) {
-                            e.printStackTrace();
-                        } catch (JSONException e) {
                             e.printStackTrace();
                         }
                     }
@@ -1090,28 +1078,97 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         dialog.show();
     }
 //-------------------------------------------------------------------------------------
+    void dialogRegistration() {
+//-------------------------------------------------------------------------------------
+        final View view = getLayoutInflater().inflate(R.layout.driver, null);
+        final LinearLayout llDriverPhone = view.findViewById(R.id.llDriverPhone);
+        final LinearLayout llDriverCar = view.findViewById(R.id.llDriverCar);
+        final LinearLayout llDriverColor = view.findViewById(R.id.llDriverColor);
+        final LinearLayout llDriverNumber = view.findViewById(R.id.llDriverNumber);
+
+        final TextView tvDriverPhone = view.findViewById(R.id.tvDriverPhone);
+        final TextView tvDriverCar = view.findViewById(R.id.tvDriverCar);
+        final TextView tvDriverColor = view.findViewById(R.id.tvDriverColor);
+        final TextView tvDriverNumber = view.findViewById(R.id.tvDriverNumber);
+
+        tvDriverPhone.setText(driver_phone);
+        tvDriverCar.setText(driver_car);
+        tvDriverColor.setText(driver_color);
+        tvDriverNumber.setText(driver_number);
+
+        final AlertDialog dialog;
+        AlertDialog.Builder add = new AlertDialog.Builder(this);
+        add.setView(view)
+                .setCancelable(false)
+                .setTitle("Регистрация")
+                .setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int id) {
+                        dialog.cancel();
+                        if (driver_phone.equals("") ||
+                            driver_car.equals("")   ||
+                            driver_color.equals("") ||
+                            driver_number.equals("")) dialogRegistration();
+                    }
+                });
+        dialog = add.create();
+        dialog.show();
+
+        llDriverPhone.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                dialog.cancel();
+                dialogPhone();
+            }
+        });
+        llDriverCar.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                dialog.cancel();
+                dialogCar();
+            }
+        });
+        llDriverColor.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                dialog.cancel();
+                dialogColor();
+            }
+        });
+        llDriverNumber.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                dialog.cancel();
+                dialogNumber();
+            }
+        });
+
+    }
+//-------------------------------------------------------------------------------------
     void getPreferences() {
 //-------------------------------------------------------------------------------------
         SharedPreferences sp = getSharedPreferences("driver_pref", MODE_PRIVATE);
-        driver_id     = sp.getLong   ("driver_id", 0L);
-        driver_phone  = sp.getString ("driver_phone", "");
-        driver_car    = sp.getString ("driver_car", "");
-        driver_color  = sp.getString ("driver_color", "");
-        driver_number = sp.getString ("driver_number", "");
-        on_time       = sp.getBoolean("on_time", false);
-        big_route     = sp.getBoolean("big_route", false);
-        my_place      = sp.getBoolean("my_place", false);
-        min_cost      = sp.getInt    ("min_cost", 35);
-        radius        = sp.getFloat  ("radius", (float) 0.7);
-        myDirections  = directionsFromString(sp.getString("my_directions", "[]"));
+        driver_login    = sp.getString ("driver_login", "");
+        driver_password = sp.getString ("driver_password", "");
+        driver_phone    = sp.getString ("driver_phone", "");
+        driver_car      = sp.getString ("driver_car", "");
+        driver_color    = sp.getString ("driver_color", "");
+        driver_number   = sp.getString ("driver_number", "");
+        on_time         = sp.getBoolean("on_time", false);
+        big_route       = sp.getBoolean("big_route", false);
+        my_place        = sp.getBoolean("my_place", false);
+        min_cost        = sp.getInt    ("min_cost", 35);
+        radius          = sp.getFloat  ("radius", (float) 0.7);
+        myDirections    = directionsFromString(sp.getString("my_directions", "[]"));
     }
 //-------------------------------------------------------------------------------------
     void putPreferences() {
 //-------------------------------------------------------------------------------------
         getSharedPreferences("driver_pref", MODE_PRIVATE)
                 .edit()
-                .putLong("driver_id", driver_id)
                 .putString("driver_phone", driver_phone)
+                .putString("driver_login", driver_login)
+                .putString("driver_password", driver_password)
                 .putString("driver_car", driver_car)
                 .putString("driver_color", driver_color)
                 .putString("driver_number", driver_number)
@@ -1323,7 +1380,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
         @Override
         protected Void doInBackground(Void... values) {
-            String sdriver = toScript(_getDriverUrl, String.valueOf(driver_id));
+            String sdriver = toScript(_getDriverUrl, driver_login, driver_password);
             if (sdriver.equals("error")) {
                 publishProgress("error");
                 return null;
@@ -1565,7 +1622,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     driver_color  + "!" +
                     driver_number + "!" +
                     driver_phone;
-            String res = toScript(_accept_orderUrl,String.valueOf(driver_id),id,driver_info);
+            String res = toScript(_accept_orderUrl,driver_login,driver_password,id,driver_info);
             if (res.equals("error")) return false;
 
             try {
@@ -1584,7 +1641,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
 
         boolean  _checkAccept() {
-            String res = toScript(_check_acceptUrl, String.valueOf(driver_id));
+            String res = toScript(_check_acceptUrl, driver_login, driver_password);
             if (res.equals("error")) return false;
 
             try {
