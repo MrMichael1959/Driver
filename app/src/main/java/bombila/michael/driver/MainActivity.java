@@ -69,7 +69,9 @@ import java.util.concurrent.TimeUnit;
 //**************************************************************************************************
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
 //**************************************************************************************************
-    String checkDriverUrl  = "http://185.25.119.3/BombilaDriver/check_driver.php";
+    String checkDriverUrl  = "http://driver.bombila.taxi/check_driver.php";
+    String registrationUrl = "http://driver.bombila.taxi/registration.php";
+    String setLocationUrl  = "http://driver.bombila.taxi/set_location.php";
 
     boolean WORKING = false;
     int DIRECTION_CODE = 1;
@@ -85,6 +87,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     String driver_color;
     String driver_number;
 
+    boolean isRegistered = false;
+
     boolean pilot = false;
     boolean on_time = false;
     boolean big_route = false;
@@ -96,7 +100,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     String callNumber = "";
 
+    boolean setlocation = false;
     String locality = "";
+    String address = "";
     double currlatitude = 0.0;
     double currlongitude = 0.0;
 
@@ -128,6 +134,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     MediaPlayer mp = null;
 
     private LocationManager locationManager;
+
 //**************************************************************************************************
     private LocationListener locationListener = new LocationListener() {
 //**************************************************************************************************
@@ -138,19 +145,22 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             currlatitude = location.getLatitude();
             currlongitude = location.getLongitude();
 
-            String addr = getAddress();
-            if (addr != null) {
-                tvAddress.setText(addr);
+            address = getAddress();
+            setlocation = true;
+
+            if (address != null) {
+                tvAddress.setText(address);
             }
+
             if (location.getProvider().equals(LocationManager.GPS_PROVIDER)) {
-                if (addr == null) {
+                if (address == null) {
                     String gps = "GPS: " + String.valueOf(currlatitude) + ", "
                             + String.valueOf(currlongitude);
                     tvAddress.setText(gps);
                 }
             }
             if (location.getProvider().equals(LocationManager.NETWORK_PROVIDER)) {
-                if (addr == null) {
+                if (address == null) {
                     String net = "NET: " + String.valueOf(currlatitude) + ", "
                             + String.valueOf(currlongitude);
                     tvAddress.setText(net);
@@ -170,7 +180,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         public void onStatusChanged(String provider, int status, Bundle extras) {
         }
     };
-
 //--------------------------------------------------------------------------------------------------
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -257,7 +266,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         });
 
     }
-
 //--------------------------------------------------------------------------------------------------
     @Override
     protected void onResume() {
@@ -265,7 +273,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         super.onResume();
         locationListenerON();
     }
-
 //--------------------------------------------------------------------------------------------------
     @Override
     protected void onDestroy() {
@@ -276,9 +283,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             mTTS = null;
         }
         daemon.cancel(false);
+        try {
+            new HttpPost().execute(setLocationUrl, driver_login, "", "").get();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
         super.onDestroy();
     }
-
 //--------------------------------------------------------------------------------------------------
     @Override
     protected void onPause() {
@@ -286,7 +299,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         super.onPause();
         locationListenerOFF();
     }
-
 //-------------------------------------------------------------------------------------
     @Override
     public void onClick(View v) {
@@ -330,6 +342,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 break;
         }
     }
+
 //--------------------------------------------------------------------------------------------------
     void callPhone(){
 //--------------------------------------------------------------------------------------------------
@@ -456,7 +469,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             @Override
             public void onClick(View view) {
                 dialog.cancel();
-                dialogExit();
+                String title = "Выход";
+                String msg = "Вы действительно хотите выйти из приложения?";
+                dialogInfo(title, msg, true);
             }
         });
 
@@ -489,9 +504,39 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     @Override
                     public void onClick(DialogInterface dialog, int id) {
                         dialog.cancel();
-                        if (driver_car.equals("")    ||
-                            driver_color.equals("")  ||
-                            driver_number.equals("")) dialogDriverInfo();
+                        if (driver_phone.equals("")) {
+                            Toast.makeText(MainActivity.this,
+                                    "Неправильный номер телефона.", Toast.LENGTH_LONG).show();
+                            dialogDriverInfo();
+                            return;
+                        }
+                        if (driver_car.equals("")) {
+                            Toast.makeText(MainActivity.this,
+                                    "Введите марку авто.", Toast.LENGTH_LONG).show();
+                            dialogDriverInfo();
+                            return;
+                        }
+                        if (driver_color.equals("")) {
+                            Toast.makeText(MainActivity.this,
+                                    "Введите цвет авто.", Toast.LENGTH_LONG).show();
+                            dialogDriverInfo();
+                            return;
+                        }
+                        if (driver_number.equals("")) {
+                            Toast.makeText(MainActivity.this,
+                                    "Введите номер авто.", Toast.LENGTH_LONG).show();
+                            dialogDriverInfo();
+                            return;
+                        }
+                        if (!isRegistered) {
+                            new HttpPost().execute(registrationUrl,
+                                    driver_phone, driver_car, driver_color, driver_number);
+//                                    .get();
+                            String title = "Данные приняты.";
+                            String msg = "Спасибо за регистрацию.\n" +
+                                    "Втечение суток Вам перезвонят и сообщат логин и пароль";
+                            dialogInfo(title, msg, false);
+                        }
                     }
                 });
         dialog = add.create();
@@ -526,6 +571,51 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }
         });
 
+    }
+//-------------------------------------------------------------------------------------
+    void dialogDirRadius() {
+//-------------------------------------------------------------------------------------
+        final View view = getLayoutInflater().inflate(R.layout.et, null);
+        final EditText et = (EditText) view.findViewById(R.id.et);
+        et.setText("");
+
+        final AlertDialog dialog;
+        AlertDialog.Builder add = new AlertDialog.Builder(this);
+        add.setView(view)
+                .setCancelable(false)
+                .setTitle("Радиус направления")
+                .setNegativeButton("Очистить", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int id) {
+                        dialog.cancel();
+                        dialogDirRadius();
+                    }
+                })
+                .setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int id) {
+                        dialog.cancel();
+                        try {
+                            String s = et.getText().toString().replace(",", ".");
+                            dir_radius = Double.parseDouble(s);
+                        } catch (NumberFormatException e) {
+                            e.printStackTrace();
+                            //                      dialogDirAction();
+                            return;
+                        }
+                        PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
+                        try {
+                            startActivityForResult(builder.build(MainActivity.this), DIRECTION_CODE);
+                        } catch (GooglePlayServicesRepairableException e) {
+                            e.printStackTrace();
+                        } catch (GooglePlayServicesNotAvailableException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                });
+
+        dialog = add.create();
+        dialog.show();
     }
 //-------------------------------------------------------------------------------------
     void dialogSettings() {
@@ -756,19 +846,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         dialog.show();
     }
 //-------------------------------------------------------------------------------------
-    void dialogExit() {
+    void dialogInfo(String title, String msg, boolean negativeButton) {
 //-------------------------------------------------------------------------------------
         final AlertDialog dialog;
         AlertDialog.Builder add = new AlertDialog.Builder(this);
+
         add.setCancelable(false)
-            .setMessage("Вы действительно хотите выйти из приложения?")
-            .setTitle("Выход")
-            .setNegativeButton("Отмена", new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int id) {
-                    dialog.cancel();
-                }
-            })
+            .setMessage(msg)
+            .setTitle(title)
             .setPositiveButton("Ok", new DialogInterface.OnClickListener() {
                 @Override
                 public void onClick(DialogInterface dialog, int id) {
@@ -777,6 +862,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     finish();
                 }
             });
+
+        if (negativeButton) {
+            add.setNegativeButton("Отмена", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int id) {
+                    dialog.cancel();
+                }
+            });
+        }
 
         dialog = add.create();
         dialog.show();
@@ -810,51 +904,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         radius = Double.parseDouble(s);
                         dialog.cancel();
                         dialogSettings();
-                    }
-                });
-
-        dialog = add.create();
-        dialog.show();
-    }
-//-------------------------------------------------------------------------------------
-    void dialogDirRadius() {
-//-------------------------------------------------------------------------------------
-        final View view = getLayoutInflater().inflate(R.layout.et, null);
-        final EditText et = (EditText) view.findViewById(R.id.et);
-        et.setText("");
-
-        final AlertDialog dialog;
-        AlertDialog.Builder add = new AlertDialog.Builder(this);
-        add.setView(view)
-                .setCancelable(false)
-                .setTitle("Радиус направления")
-                .setNegativeButton("Очистить", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int id) {
-                        dialog.cancel();
-                        dialogDirRadius();
-                    }
-                })
-                .setPositiveButton("Ok", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int id) {
-                        dialog.cancel();
-                        try {
-                            String s = et.getText().toString().replace(",", ".");
-                            dir_radius = Double.parseDouble(s);
-                        } catch (NumberFormatException e) {
-                            e.printStackTrace();
-      //                      dialogDirAction();
-                            return;
-                        }
-                        PlacePicker.IntentBuilder builder = new PlacePicker.IntentBuilder();
-                        try {
-                            startActivityForResult(builder.build(MainActivity.this), DIRECTION_CODE);
-                        } catch (GooglePlayServicesRepairableException e) {
-                            e.printStackTrace();
-                        } catch (GooglePlayServicesNotAvailableException e) {
-                            e.printStackTrace();
-                        }
                     }
                 });
 
@@ -963,7 +1012,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     void dialogCar() {
 //-------------------------------------------------------------------------------------
         final View view = getLayoutInflater().inflate(R.layout.et, null);
-        final EditText et = (EditText) view.findViewById(R.id.et);
+        final EditText et = view.findViewById(R.id.et);
         et.setText(driver_car);
 
         final AlertDialog dialog;
@@ -1064,8 +1113,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                             String s = new HttpPost()
                                     .execute(checkDriverUrl, driver_login, driver_password)
                                     .get();
-                            if (s.equals("error")) {
-                                dialogRegistration();
+                            if (s.equals("error") ||
+                                    driver_login.equals("") ||
+                                    driver_password.equals("")) {
+                                dialogDriverInfo();
+                            } else {
+                                isRegistered = true;
                             }
                         } catch (InterruptedException e) {
                             e.printStackTrace();
@@ -1076,73 +1129,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 });
         dialog = builder.create();
         dialog.show();
-    }
-//-------------------------------------------------------------------------------------
-    void dialogRegistration() {
-//-------------------------------------------------------------------------------------
-        final View view = getLayoutInflater().inflate(R.layout.driver, null);
-        final LinearLayout llDriverPhone = view.findViewById(R.id.llDriverPhone);
-        final LinearLayout llDriverCar = view.findViewById(R.id.llDriverCar);
-        final LinearLayout llDriverColor = view.findViewById(R.id.llDriverColor);
-        final LinearLayout llDriverNumber = view.findViewById(R.id.llDriverNumber);
-
-        final TextView tvDriverPhone = view.findViewById(R.id.tvDriverPhone);
-        final TextView tvDriverCar = view.findViewById(R.id.tvDriverCar);
-        final TextView tvDriverColor = view.findViewById(R.id.tvDriverColor);
-        final TextView tvDriverNumber = view.findViewById(R.id.tvDriverNumber);
-
-        tvDriverPhone.setText(driver_phone);
-        tvDriverCar.setText(driver_car);
-        tvDriverColor.setText(driver_color);
-        tvDriverNumber.setText(driver_number);
-
-        final AlertDialog dialog;
-        AlertDialog.Builder add = new AlertDialog.Builder(this);
-        add.setView(view)
-                .setCancelable(false)
-                .setTitle("Регистрация")
-                .setPositiveButton("Ok", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int id) {
-                        dialog.cancel();
-                        if (driver_phone.equals("") ||
-                            driver_car.equals("")   ||
-                            driver_color.equals("") ||
-                            driver_number.equals("")) dialogRegistration();
-                    }
-                });
-        dialog = add.create();
-        dialog.show();
-
-        llDriverPhone.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                dialog.cancel();
-                dialogPhone();
-            }
-        });
-        llDriverCar.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                dialog.cancel();
-                dialogCar();
-            }
-        });
-        llDriverColor.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                dialog.cancel();
-                dialogColor();
-            }
-        });
-        llDriverNumber.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                dialog.cancel();
-                dialogNumber();
-            }
-        });
-
     }
 //-------------------------------------------------------------------------------------
     void getPreferences() {
@@ -1185,7 +1171,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public boolean onKeyDown(int keyCode, KeyEvent event) {
 //-------------------------------------------------------------------------------------
         if ((keyCode == KeyEvent.KEYCODE_BACK)) {
-            dialogExit();
+            String title = "Выход";
+            String msg = "Вы действительно хотите выйти из приложения?";
+            dialogInfo(title, msg, true);
             return false;
         }
         return super.onKeyDown(keyCode, event);
@@ -1271,9 +1259,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 myPlace = PlacePicker.getPlace(this, data);
                 currlatitude = myPlace.getLatLng().latitude;
                 currlongitude = myPlace.getLatLng().longitude;
-                String address = myPlace.getAddress().toString();
+                address = myPlace.getAddress().toString();
                 LatLng latLng = new LatLng(currlatitude, currlongitude);
-//                String locality;
+
                 try {
                     List<Address> addresses = new Geocoder(this, Locale.getDefault())
                             .getFromLocation(latLng.latitude, latLng.longitude,1);
@@ -1288,6 +1276,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     tvLocality.setText(locality);
                     my_place = true;
                     locationListenerOFF();
+                    setlocation = true;
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -1361,12 +1350,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 //**************************************************************************************************
     private class  Daemon extends AsyncTask<Void, String, Void> {
 //**************************************************************************************************
-        String     _getDriverUrl        = "http://185.25.119.3/BombilaDriver/get_driver.php";
-        String     _get_free_ordersUrl  = "http://185.25.119.3/BombilaDriver/get_free_orders.php";
-        String     _accept_orderUrl     = "http://185.25.119.3/BombilaDriver/accept_order.php";
-        String     _update_orderUrl     = "http://185.25.119.3/BombilaDriver/update_order.php";
-        String     _get_order_by_idUrl  = "http://185.25.119.3/BombilaDriver/get_order_by_id.php";
-        String     _check_acceptUrl     = "http://185.25.119.3/BombilaDriver/check_accept.php";
+        String     _getDriverUrl        = "http://driver.bombila.taxi/get_driver.php";
+        String     _get_free_ordersUrl  = "http://driver.bombila.taxi/get_free_orders.php";
+        String     _accept_orderUrl     = "http://driver.bombila.taxi/accept_order.php";
+        String     _update_orderUrl     = "http://driver.bombila.taxi/update_order.php";
+        String     _get_order_by_idUrl  = "http://driver.bombila.taxi/get_order_by_id.php";
+        String     _check_acceptUrl     = "http://driver.bombila.taxi/check_accept.php";
         JSONObject _driver = null;
         JSONArray  _orders = null;
         JSONObject _order  = null;
@@ -1380,7 +1369,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
         @Override
         protected Void doInBackground(Void... values) {
-            String sdriver = toScript(_getDriverUrl, driver_login, driver_password);
+            String sdriver = _toScript(_getDriverUrl, driver_login, driver_password);
             if (sdriver.equals("error")) {
                 publishProgress("error");
                 return null;
@@ -1399,6 +1388,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 if(isCancelled()) break;
                 if (currlatitude==0.0 || currlongitude==0.0 || locality==null) continue;
                 if (_checkButtons()) continue;
+
+                if (setlocation) {
+                    _toScript(setLocationUrl, driver_login, locality, address);
+                    setlocation = false;
+                }
+
 
                 publishProgress("error");
 
@@ -1463,7 +1458,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             super.onPostExecute(result);
         }
 
-        String toScript(String... args) {
+        String _toScript(String... args) {
             String resultString;
             String pars = "";
             for (int i=1; i<args.length; i++) {
@@ -1518,8 +1513,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     String[] arr = addresses.getString(0).split(", ");
                     String address = arr[0] + ", " + arr[1];
                     if (!locality.equals(local)) {
-                        address += " (" + local + ")";
-                        fot = "[Межгород]";
+                        continue;
+//                        address += " (" + local + ")";
+//                        fot = "[Межгород]";
                     }
                     String route = "";
                     for (int k=1; k<addresses.length(); k++) {
@@ -1622,7 +1618,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     driver_color  + "!" +
                     driver_number + "!" +
                     driver_phone;
-            String res = toScript(_accept_orderUrl,driver_login,driver_password,id,driver_info);
+            String res = _toScript(_accept_orderUrl,driver_login,id,driver_info);
             if (res.equals("error")) return false;
 
             try {
@@ -1641,7 +1637,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
 
         boolean  _checkAccept() {
-            String res = toScript(_check_acceptUrl, driver_login, driver_password);
+            String res = _toScript(_check_acceptUrl, driver_login, driver_password);
             if (res.equals("error")) return false;
 
             try {
@@ -1656,7 +1652,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         boolean _updateOrder(String data, String status) {
             String res = "";
             try {
-                res = toScript(_update_orderUrl, _order.getString("id"), data, status);
+                res = _toScript(_update_orderUrl, _order.getString("id"), data, status);
             } catch (JSONException e) {
                 e.printStackTrace();
             }
@@ -1664,7 +1660,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
 
         void _getOrders() {
-            String result = toScript(_get_free_ordersUrl);
+            String result = _toScript(_get_free_ordersUrl);
             if (result.equals("error")) {
                 _orders = null;
                 return;
@@ -1678,6 +1674,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 JSONArray orders = new JSONArray();
                 for (int i=0; i<arr_id.length(); i++) {
                     JSONObject jobj  = new JSONObject();
+
+                    String loc = new JSONObject(arr_data.getString(i)).
+                                        getJSONArray("localities").
+                                        get(0).
+                                        toString();
+                    if (!loc.equals(locality)) continue;
+
                     jobj.put("id", arr_id.getLong(i));
                     jobj.put("phone", arr_phone.getString(i));
                     jobj.put("data", new JSONObject(arr_data.getString(i)));
@@ -1685,6 +1688,25 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                     orders.put(jobj);
                 }
+
+                if (_orders != null) {
+                    for (int i=0; i<orders.length(); i++) {
+                        int k = 0;
+                        for (int j=0; j<_orders.length(); j++) {
+                            if (orders.getJSONObject(i).getLong("id") ==
+                                    _orders.getJSONObject(j).getLong("id")) {
+                                k++;
+                                break;
+                            }
+                        }
+                        if (k == 0) {
+                            String msg = "Поступил новый заказ.";
+                            mTTS.speak(msg, TextToSpeech.QUEUE_FLUSH, null);
+                            break;
+                        }
+                    }
+                }
+
                 _orders = orders;
             } catch (JSONException e) {
                 e.printStackTrace();
@@ -1694,7 +1716,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         String _getOrderStatus() {
             String status = "";
             try {
-                String res = toScript(_get_order_by_idUrl, _order.getString("id"));
+                String res = _toScript(_get_order_by_idUrl, _order.getString("id"));
                 status = new JSONObject(res).getString("status");
             } catch (JSONException e) {
                 e.printStackTrace();
