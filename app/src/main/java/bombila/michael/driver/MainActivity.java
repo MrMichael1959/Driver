@@ -93,7 +93,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     boolean on_time = false;
     boolean big_route = false;
     boolean my_place = false;
-    Place myPlace;
     int min_cost = 35;
     double radius = 0.7;
     double dir_radius = 0.0;
@@ -101,6 +100,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     String callNumber = "";
 
     boolean setlocation = false;
+    String adminarea = "";
     String locality = "";
     String address = "";
     double currlatitude = 0.0;
@@ -377,21 +377,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         } catch(SecurityException e) { e.printStackTrace(); }
     }
 //--------------------------------------------------------------------------------------------------
-    LatLng getLatLng(String addr){
-//--------------------------------------------------------------------------------------------------
-        Geocoder coder = new Geocoder(this, Locale.getDefault());
-        List<Address> addresses;
-        LatLng latlng = null;
-        try {
-            addresses = coder.getFromLocationName(addr, 1);
-            if (addresses==null || addresses.size()==0) { return null; }
-            latlng = new LatLng(addresses.get(0).getLatitude(), addresses.get(0).getLongitude());
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return latlng;
-    }
-//--------------------------------------------------------------------------------------------------
     String getAddress() {
 //--------------------------------------------------------------------------------------------------
         if(currlatitude==0.0 || currlongitude==0.0) { return null; }
@@ -403,6 +388,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             if (addresses==null || addresses.size()==0) { return null; }
             address = addresses.get(0).getAddressLine(0);
             locality = addresses.get(0).getLocality();
+            adminarea = addresses.get(0).getAdminArea().split(" ")[0];
             tvLocality.setText(locality);
             String[] arr = address.split(", ");
             address = arr[0] + ", " + arr[1];
@@ -1256,23 +1242,24 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
         if (requestCode == MY_PLACE_CODE) {
             if (resultCode == RESULT_OK) {
-                myPlace = PlacePicker.getPlace(this, data);
+                Place myPlace = PlacePicker.getPlace(this, data);
                 currlatitude = myPlace.getLatLng().latitude;
                 currlongitude = myPlace.getLatLng().longitude;
-                address = myPlace.getAddress().toString();
-                LatLng latLng = new LatLng(currlatitude, currlongitude);
+
 
                 try {
                     List<Address> addresses = new Geocoder(this, Locale.getDefault())
-                            .getFromLocation(latLng.latitude, latLng.longitude,1);
+                            .getFromLocation(currlatitude, currlongitude,1);
+                    address = addresses.get(0).getAddressLine(0);
                     if (addresses.size() == 0 || address.split(", ").length < 2) {
                         Toast.makeText(this, "Адрес не определен.", Toast.LENGTH_LONG).show();
                         return;
                     }
                     String[] arr = address.split(", ");
                     address = arr[0] + ", " + arr[1];
-                    tvAddress.setText(address);
                     locality = addresses.get(0).getLocality();
+                    adminarea = addresses.get(0).getAdminArea().split(" ")[0];
+                    tvAddress.setText(address);
                     tvLocality.setText(locality);
                     my_place = true;
                     locationListenerOFF();
@@ -1508,14 +1495,17 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     String order_id = obj.getString("id");
 
                     JSONObject data = obj.getJSONObject("data");
+                    String area  = data.getString("adminarea").split(" ")[0];
                     String local = data.getJSONArray("localities").getString(0);
                     JSONArray addresses = data.getJSONArray("addresses");
                     String[] arr = addresses.getString(0).split(", ");
                     String address = arr[0] + ", " + arr[1];
-                    if (!locality.equals(local)) {
+                    if (!adminarea.equals(area)) {
                         continue;
-//                        address += " (" + local + ")";
-//                        fot = "[Межгород]";
+                    }
+                    if (!locality.equals(local)) {
+                        address += " (" + local + ")";
+                        fot = "[Межгород]";
                     }
                     String route = "";
                     for (int k=1; k<addresses.length(); k++) {
@@ -1546,9 +1536,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                     String distance = "(" + dist + ")";
                     if (d < 10.00) dist = "0" + dist;
-
-//                    String fot = "";
-//                    if (!locality.equals(local)) fot = "[Межгород]";
 
                     m = new HashMap<>();
                     m.put("order_id", order_id);
@@ -1675,11 +1662,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 for (int i=0; i<arr_id.length(); i++) {
                     JSONObject jobj  = new JSONObject();
 
-                    String loc = new JSONObject(arr_data.getString(i)).
-                                        getJSONArray("localities").
-                                        get(0).
-                                        toString();
-                    if (!loc.equals(locality)) continue;
+                    String area = new JSONObject(arr_data.getString(i)).
+                                        getString("adminarea").split(" ")[0];
+                    if (!area.equals(adminarea)) continue;
 
                     jobj.put("id", arr_id.getLong(i));
                     jobj.put("phone", arr_phone.getString(i));
